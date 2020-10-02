@@ -3,25 +3,23 @@ package whitelist
 import (
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 
-	"github.com/Tnze/CoolQ-Golang-SDK/cqp"
 	"github.com/google/uuid"
 	"github.com/miaoscraft/SiS/data"
 )
 
 func MyID(qq int64, name string, ret func(msg string)) {
 	// 查询玩家名字和ID
-	name, id, err := getUUID(name)
+	Name, id, err := GetUUID(name)
 	if err != nil {
-		cqp.AddLog(cqp.Error, "MyID", fmt.Sprintf("向Mojang查询玩家UUID失败: %v", err))
-		ret("我不要你觉得，我要我觉得" + name + "是个假名字")
+		Logger.Errorf("向Mojang查询玩家UUID失败: %v", err)
+		ret(fmt.Sprintf("捡到个纸团\n( ^ ω ^) \n≡⊃§⊂≡ \n打开看一眼\n( ^ ω ^)\n⊃|" + name + "|⊂\n不认识这个id呢\n( ^ ω ^) \n≡⊃§⊂≡\n \n§\n ¶\n　∩( ^ ω ^)"))
 		return
 	}
-  
+
 	onOldID := func(oldID uuid.UUID) error {
 		// 删除用户的旧白名单
 		oldName, err := getName(oldID)
@@ -40,28 +38,32 @@ func MyID(qq int64, name string, ret func(msg string)) {
 
 	onSuccess := func() error {
 		// 添加白名单
-		err = data.AddWhitelist(name)
+		err = data.AddWhitelist(Name)
 		if err != nil {
 			return fmt.Errorf("添加白名单失败: %v", err)
 		}
+		Logger.Infof("添加白名单%q成功", Name)
 		return nil
 	}
 
 	// 在数据库中记录
 	owner, err := data.SetWhitelist(qq, id, onOldID, onSuccess)
 	if err != nil {
-		cqp.AddLog(cqp.Error, "MyID", fmt.Sprintf("设置白名单失败: %v", err))
+		Logger.Errorf("设置白名单失败: %v", err)
 		ret("白名单貌似没有成功加上欸，怎么办ʕ •ᴥ•ʔ")
 		return
 	}
 
 	// 若owner是当前处理的用户则说明绑定成功，否则就是失败
 	if owner != qq {
-		ret(fmt.Sprintf("你想要%q的白名？没门儿！因为已经被[CQ:at,qq=%d]占有啦！", name, owner))
+		if len(Name) < 3 {
+			ret(fmt.Sprintf("白名单%s现在在[CQ:at,qq=%d]手上", Name, owner))
+		} else {
+			ret(fmt.Sprintf("{\\__/}\n( • . •)\n/ >%s\n你要这个吗？\n\n{\\__/}\n( • - •)\n%s< \\\n这是[CQ:at,qq=%d]的", Name, Name[len(Name)-3:], owner))
+		}
 		return
 	}
-  
-  ret(fmt.Sprintf("{\\__/}\n( • . •)\n/ >%s\n你要这个吗？\n\n {\\__/}\n ( • - •)\n%s< \\\n这是[CQ:at,qq=%d]的", name, "..."+name[0:3], owner))
+	ret(fmt.Sprintf("{\\__/}\n( • . •)\n/ >%s\n呐，你的白名单", Name))
 }
 
 func RemoveWhitelist(qq int64, ret func(msg string)) {
@@ -76,20 +78,21 @@ func RemoveWhitelist(qq int64, ret func(msg string)) {
 			return fmt.Errorf("删除%s白名单失败: %v", name, err)
 		}
 
-    ret( name + "，你白名单(号)没了")
+		Logger.Infof("删除白名单%q成功", name)
+		ret(name + "，你白名单(号)没了")
 		return nil
 	}
 	// 删除数据库中的数据
 	err := data.UnsetWhitelist(qq, onHas)
 	if err != nil {
-		cqp.AddLog(cqp.Error, "MyID", fmt.Sprintf("删除白名单失败: %v", err))
+		Logger.Errorf("删除白名单失败: %v", err)
 		ret("我的系统又出问题了(つД`)ノ")
 		return
 	}
 }
 
-// getUUID 查询玩家的UUID
-func getUUID(name string) (string, uuid.UUID, error) {
+// GetUUID 查询玩家的UUID
+func GetUUID(name string) (string, uuid.UUID, error) {
 	var id uuid.UUID
 
 	// 发送请求
@@ -118,7 +121,7 @@ func getUUID(name string) (string, uuid.UUID, error) {
 
 // getName 查询玩家的Name
 func getName(UUID uuid.UUID) (string, error) {
-	data, status, err := get("https://api.mojang.com/user/profiles/" + hex.EncodeToString(UUID[:]) + "/names")
+	data, status, err := get("https://sessionserver.mojang.com/session/minecraft/profile/" + hex.EncodeToString(UUID[:]))
 	if err != nil {
 		return "", err
 	}
@@ -129,18 +132,14 @@ func getName(UUID uuid.UUID) (string, error) {
 		err = fmt.Errorf("服务器状态码非200: %v", status)
 	}
 
-	var resp []struct{ Name string }
+	var resp struct{ Name string }
 	// 解析json返回值
 	err = json.NewDecoder(data).Decode(&resp)
 	if err != nil {
 		return "", err
 	}
 
-	if len(resp) < 1 {
-		return "", errors.New("(ﾟﾍﾟ?)???没有查询到值")
-	}
-
-	return resp[0].Name, nil
+	return resp.Name, nil
 }
 
 // 发送GET请求
@@ -160,4 +159,18 @@ func get(url string) (io.ReadCloser, int, error) {
 	}
 
 	return resp.Body, resp.StatusCode, nil
+}
+
+var Logger interface {
+	Error(str string)
+	Errorf(format string, args ...interface{})
+
+	Waring(str string)
+	Waringf(format string, args ...interface{})
+
+	Info(str string)
+	Infof(format string, args ...interface{})
+
+	Debug(str string)
+	Debugf(format string, args ...interface{})
 }

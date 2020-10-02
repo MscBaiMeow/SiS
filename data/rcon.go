@@ -1,55 +1,74 @@
 package data
 
 import (
-	"github.com/Tnze/CoolQ-Golang-SDK/cqp"
-	"github.com/Tnze/go-mc/net"
+	"errors"
+	"github.com/Tnze/go-mc/chat"
+	mcnet "github.com/Tnze/go-mc/net"
+	"strings"
+	"time"
 )
 
-var rcon net.RCONClientConn
+var rconDialer func() (mcnet.RCONClientConn, error)
 
-var reopenRCON func() error
-
-func openRCON(address, password string) (err error) {
-	reopenRCON = func() error {
-		rcon, err = net.DialRCON(address, password)
-		return err
+func openRCON(address, password string) error {
+	rconDialer = func() (mcnet.RCONClientConn, error) {
+		return mcnet.DialRCON(address, password)
 	}
-	return reopenRCON()
+	return nil
 }
 
-// rconCommand 执行RCON命令，断线时尝试重连一次
-func rconCommand(cmd string) (string, error) {
-ReTry:
-	err := rcon.Cmd(cmd)
+// RCONCmd 执行RCON命令，每次都创建一个连接。
+// 当ret不为nil时，通过回调方式返回RCON执行结果，ret可能被调用多次。
+func RCONCmd(cmd string, ret func(string)) error {
+	var r *mcnet.RCONConn
+
+	if rconDialer == nil {
+		return errors.New("RCON未设置")
+	}
+	conn, err := rconDialer()
 	if err != nil {
-		cqp.AddLog(cqp.Error, "RCON", "rcon添加白名单失败: "+err.Error())
-		// 断线重连
-		err = reopenRCON()
-		if err != nil {
-			return "", err
+		return err
+	}
+	r = conn.(*mcnet.RCONConn)
+
+	err = r.Cmd(cmd)
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		defer r.Close()
+		if ret == nil {
+			return
 		}
-		goto ReTry
-	}
+		tip := time.AfterFunc(time.Second, func() {
+			ret("正在努力发送指令噢，请稍后~")
+		})
+		for {
+			_ = r.SetDeadline(time.Now().Add(time.Second * 10))
+			resp, err := r.Resp()
+			if err != nil {
+				Logger.Debugf("停止转发RCON返回值: %v", err)
+				return
+			}
+			tip.Stop() // 不再发送提示
 
-	resp, err := rcon.Resp()
-	if err != nil {
-		cqp.AddLog(cqp.Error, "RCON", "读rcon返回值失败: "+err.Error())
-		// 不重连
-		return "", err
-	}
+			Logger.Debugf("RCON返回: %q", resp)
+			// 过滤掉末尾换行符、空格和零字符，过滤§格式字符串
+			resp = chat.Message{Text: strings.TrimRight(resp, " \000\n")}.ClearString()
+			ret(resp)
+		}
+	}()
 
-	cqp.AddLog(cqp.Info, "RCON", "RCON: "+resp)
-	return resp, nil
+	return nil
 }
 
 // AddWhitelist 从游戏服务器添加白名单
 func AddWhitelist(name string) error {
-	_, err := rconCommand("whitelist add " + name)
-	return err
+	return RCONCmd("whitelist add "+name, nil)
 }
 
 // RemoveWhitelist 从游戏服务器删除白名单
 func RemoveWhitelist(name string) error {
-	_, err := rconCommand("whitelist remove " + name)
-	return err
+	return RCONCmd("whitelist remove "+name, nil)
 }

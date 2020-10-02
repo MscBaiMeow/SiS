@@ -1,16 +1,20 @@
+// Package ping 提供内置指令"ping"的实现
 package ping
 
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/Tnze/go-mc/bot"
-	"github.com/Tnze/go-mc/chat"
-	"github.com/google/uuid"
-	"github.com/miaoscraft/SiS/data"
+	"net"
 	"strconv"
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/Tnze/CoolQ-Golang-SDK/cqp/util"
+	"github.com/Tnze/go-mc/bot"
+	"github.com/Tnze/go-mc/chat"
+	"github.com/google/uuid"
+	"github.com/miaoscraft/SiS/data"
 )
 
 func Ping(args []string, ret func(msg string)) bool {
@@ -19,13 +23,20 @@ func Ping(args []string, ret func(msg string)) bool {
 		delay time.Duration
 		err   error
 	)
+	addr, port := getAddr(args)
+
+	//SRV解析
+	if _, SRV, err := net.LookupSRV("minecraft", "tcp", addr); len(SRV) != 0 && err == nil {
+		addr = SRV[0].Target
+		port = int(SRV[0].Port)
+	}
+
 	if d := data.Config.Ping.Timeout.Duration; d > 0 {
 		//启用Timeout
-		addr, port := getAddr(args)
 		resp, delay, err = bot.PingAndListTimeout(addr, port, d)
 	} else {
 		//禁用Timeout
-		resp, delay, err = bot.PingAndList(getAddr(args))
+		resp, delay, err = bot.PingAndList(addr, port)
 	}
 	if err != nil {
 		ret(fmt.Sprintf("嘶...请求失败惹！: %v", err))
@@ -38,11 +49,11 @@ func Ping(args []string, ret func(msg string)) bool {
 		ret(fmt.Sprintf("嘶...解码失败惹！: %v", err))
 		return true
 	}
+
 	// 延迟用手动填进去
 	s.Delay = delay
 
 	ret(s.String())
-
 	return true
 }
 
@@ -64,18 +75,21 @@ func getAddr(args []string) (addr string, port int) {
 		}
 	}
 
+	// 如果有则加载第一个参数
 	if len(args) >= 1 {
-		// 在冒号后面寻找端口
-		f := strings.Split(args[0], ":")
-		if len(f) >= 2 {
-			if p, err := strconv.Atoi(f[1]); err == nil {
-				port = p
-			}
-		}
-
-		// 冒号前面是地址
-		addr = f[0]
+		addr = args[0]
 	}
+
+	// 在冒号后面寻找端口
+	f := strings.Split(addr, ":")
+	if len(f) >= 2 {
+		if p, err := strconv.Atoi(f[1]); err == nil {
+			port = p
+		}
+	}
+
+	// 冒号前面是地址
+	addr = f[0]
 
 	return addr, port
 }
@@ -96,19 +110,24 @@ type status struct {
 	}
 	//favicon ignored
 
-	Delay time.Duration
+	Delay time.Duration `json:"-"`
 }
 
 var tmp = template.Must(template.
 	New("PingRet").
+	Funcs(CQCodeUtil).
 	Parse(`喵哈喽～
-服务器版本: [{{ .Version.Protocol }}] {{ .Version.Name }}
-Motd: {{ .Description.ClearString }}
-延迟: {{.Delay }}
+服务器版本: [{{ .Version.Protocol }}] {{ .Version.Name | escape }}
+Motd: {{ .Description.ClearString | escape }}
+延迟: {{ .Delay }}
 在线人数: {{ .Players.Online -}}/{{- .Players.Max }}
 玩家列表:
-{{ range .Players.Sample }}- [{{ .Name }}]
+{{ range .Players.Sample }}- [{{ .Name | escape }}]
 {{ end }}にゃ～`))
+
+var CQCodeUtil = template.FuncMap{
+	"escape": util.Escape,
+}
 
 func (s status) String() string {
 	var sb strings.Builder
@@ -116,5 +135,6 @@ func (s status) String() string {
 	if err != nil {
 		return fmt.Sprintf("似乎在渲染文字模版时出现了棘手的问题: %v", err)
 	}
-	return sb.String()
+	cleanStr, _ := chat.TransCtrlSeq(sb.String(), false)
+	return cleanStr
 }

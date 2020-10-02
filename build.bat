@@ -1,22 +1,61 @@
-:: 关闭控制台回显  
 @echo off
 
-:: 酷Q的dev文件夹路径（改成你自己的）
-SET DevDir=D:\酷Q Pro\dev\me.cqp.tnze.demo
-if not exist "%DevDir%" mkdir "%DevDir%"
+:: SET DevDir=D:\CoolQ Pro\dev\cn.miaoscraft.sis
 
-:: 设置环境变量  
+echo Setting proxy
+SET GOPROXY=https://goproxy.cn
+
+echo Checking go installation...
+go version > nul
+IF ERRORLEVEL 1 (
+	echo Please install go first...
+	goto RETURN
+)
+
+echo Checking gcc installation...
+gcc --version > nul
+IF ERRORLEVEL 1 (
+	echo Please install gcc first...
+	goto RETURN
+)
+
+echo Checking cqcfg installation...
+cqcfg -v
+IF ERRORLEVEL 1 (
+	echo Install cqcfg...
+	go get github.com/Tnze/CoolQ-Golang-SDK/tools/cqcfg@master
+	IF ERRORLEVEL 1 (
+		echo Install cqcfg fail
+		goto RETURN
+	)
+)
+
+echo Generating app.json ...
+go generate
+IF ERRORLEVEL 1 (
+	echo Generate app.json fail
+	goto RETURN
+)
+echo.
+
+echo Setting env vars..
 SET CGO_LDFLAGS=-Wl,--kill-at
 SET CGO_ENABLED=1
 SET GOOS=windows
 SET GOARCH=386
-SET GOPROXY=https://goproxy.cn
 
-:: 生成app.json  
-go generate
+echo Building app.dll ...
+go build -ldflags "-s -w" -buildmode=c-shared -ldflags "-extldflags ""-static""" -o app.dll
+IF ERRORLEVEL 1 (pause) ELSE (echo Build success!)
 
-:: 编译app.dll  
-go build -buildmode=c-shared -o app.dll
+if defined DevDir (
+    echo Copy app.dll amd app.json ...
+    for %%f in (app.dll,app.json) do move %%f "%DevDir%\%%f" > nul
+    IF ERRORLEVEL 1 pause
+)
 
-:: 把app.dll和app.json复制到酷Q的dev文件夹
-for %%f in (app.dll,app.json) do move %%f "%DevDir%\%%f" > nul
+exit /B
+
+:RETURN
+if not defined NOPAUSE pause
+exit /B

@@ -4,10 +4,10 @@ go 1.12
 
 require (
 	github.com/BurntSushi/toml v0.3.1
-	github.com/Tnze/CoolQ-Golang-SDK v0.0.0-20190729083435-26b5706b9042
-	github.com/Tnze/go-mc v1.14.4-0.20190826180659-d85d31da46d6
-	github.com/etcd-io/bbolt v1.3.3
+	github.com/Tnze/CoolQ-Golang-SDK v1.2.0
+	github.com/Tnze/go-mc v1.15.2-0.20200501024436-e3052668a323
+	github.com/go-sql-driver/mysql v1.4.1
 	github.com/google/uuid v1.1.1
-	go.etcd.io/bbolt v1.3.3 // indirect
-	golang.org/x/sys v0.0.0-20190606165138-5da285871e9c // indirect
+	github.com/mattn/go-sqlite3 v1.13.0
+	google.golang.org/appengine v1.6.5 // indirect
 )
